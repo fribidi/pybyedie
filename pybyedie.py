@@ -32,10 +32,6 @@ class Run:
 	def __cmp__ (self, other):
 		return cmp (self.ranges, other.ranges)
 
-	@staticmethod
-	def sentinel ():
-		return Run ([(-1, 0)], None, -1)
-
 	class Mismatch (Exception): pass
 	class TypeMismatch (Mismatch): pass
 	class LevelMismatch (Mismatch): pass
@@ -76,6 +72,21 @@ class Run:
 						       for r in run_lists), \
 						      [])))
 
+def split (items, test):
+	'''Calls test with each two successive members of items,
+	   and if test returns True, cuts the list at that location.
+	   Returns list of non-empty lists.'''
+	if not items:
+		return []
+	last = items[0]
+	out = [[last]]
+	for item in items[1:]:
+		if test  (last, item):
+			out.append ([])
+		out[-1].append (item)
+		last = item
+	return out
+
 
 def get_paragraph_embedding_level (runs, base):
 
@@ -97,7 +108,7 @@ def get_paragraph_embedding_level (runs, base):
 	else:
 		assert (False)
 
-def get_explicit_levels_and_directions (runs, par_level):
+def do_explicit_levels_and_directions (runs, par_level):
 
 	class State:
 		def __init__ (self, level, dir):
@@ -162,18 +173,52 @@ def get_explicit_levels_and_directions (runs, par_level):
 			r.level = -1 # To be removed
 	return runs
 
+def resolve_weak_types (runs):
+	
+	return Run.compact_list (runs)
+
+def resolve_neutral_types (runs):
+	
+	return Run.compact_list (runs)
+
+def resolve_implicit_levels (runs):
+	
+	return Run.compact_list (runs)
+
+def resolve_level_run (runs, sor, eor):
+
+	# Create sentinels for sor, eor
+	runs = [Run ((-1,0), sor, -1)] + runs + [Run ((-1,0), eor, -1)]
+
+	runs = resolve_weak_types (runs)
+
+	return [r for r in runs if r.level != -1]
+
+def resolve_per_level_run_stuff (runs, par_level):
+
+	runs = split (runs, lambda a,b: a.level != b.level)
+	# runs now is list of list of runs at same level
+
+	levels = [r[0].level for r in runs]
+	sors = [[L,R][max (pair) % 2] for pair in zip (levels, [par_level]+levels[:-1])]
+	eors = [[L,R][max (pair) % 2] for pair in zip (levels[1:]+[par_level], levels )]
+	del levels
+
+	runs = map (resolve_level_run, runs, sors, eors)
+
+	return sum (runs, [])
 
 def bidi_par (runs, base):
 
 	par_level = get_paragraph_embedding_level (runs, base)
 
-	runs = get_explicit_levels_and_directions (runs, par_level)
+	runs = do_explicit_levels_and_directions (runs, par_level)
 
 	# Separate removed characters, to add back after we're done.
 	removed = Run.compact_list (r for r in runs if r.level == -1)
 	runs = Run.compact_list (r for r in runs if r.level != -1)
 
-	# Do more bidi
+	runs = resolve_per_level_run_stuff (runs, par_level)
 
 	return Run.merge_lists ([runs, removed])
 
@@ -182,12 +227,8 @@ def bidi (types, base):
 	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
 
 	# P1
-	def split_at_B (run_lists, run):
-		run_lists[-1].append (run)
-		if run.type == B:
-			run_lists.append ([])
-		return run_lists
-	pars = reduce (split_at_B, runs, [[]])
+	pars = split (runs, lambda r,_: r.type == B)
+
 	runs = sum ((bidi_par (par, base) for par in pars), [])
 	return runs
 
