@@ -20,112 +20,180 @@ RLE	= "RLE"
 RLO	= "RLO"
 PDF	= "PDF"
 
-def paragraph_level (types, base):
+class Run:
+	def __init__ (self, ranges, type, level):
+		self.ranges = ranges
+		self.type = type
+		self.level = level
 
-	el = 0 # embedding_level
+	def __repr__ (self):
+		return "Run(%s,%s,%s)" % (self.ranges, self.type, self.level)
 
-	# P2, P3
+	def __cmp__ (self, other):
+		return cmp (self.ranges, other.ranges)
+
+	@staticmethod
+	def sentinel ():
+		return Run ([(-1, 0)], None, -1)
+
+	class Mismatch (Exception): pass
+	class TypeMismatch (Mismatch): pass
+	class LevelMismatch (Mismatch): pass
+
+	def append (self, other):
+		if self.type  != other.type:  raise Run.TypeMismatch ()
+		if self.level != other.level: raise Run.LevelMismatch ()
+		assert self.ranges[-1][1] <= other.ranges[0][0]
+		if self.ranges[-1][1] == other.ranges[0][0]:
+			self.ranges[-1] = (self.ranges[-1][0], other.ranges[0][1])
+			self.ranges.extend (other.ranges[1:])
+		else:
+			self.ranges.extend (other.ranges)
+
+	@staticmethod
+	def compact_list (runs):
+
+		def append_run (runs, run):
+			try:
+				runs[-1].append (run)
+				return runs
+			except Run.Mismatch: pass
+			except IndexError: pass
+			runs.append (run)
+			return runs
+		return reduce (append_run, runs, [])
+
+	@staticmethod
+	def uncompact_list (runs):
+
+		return [Run (range, run.type, run.level) \
+			for run in runs \
+			for range in run.ranges]
+
+	@staticmethod
+	def merge_lists (run_lists):
+		return Run.compact_list (sorted (sum ((Run.uncompact_list (r) \
+						       for r in run_lists), \
+						      [])))
+
+
+def get_paragraph_embedding_level (runs, base):
+
 	if base == ON:
-		for i in range (len (types)):
-			if types[i] in [L, AL, R]:
-				if types[i] in [AL, R]:
-					el = 1
-			break
+		try:
+			# P2
+			first = (r for r in runs if r.type in [L, AL, R]).next ()
+			# P3
+			return 1 if first.type in [AL, R] else 0
+		except StopIteration:
+			# P3
+			return 0
 	elif base == L:
-		el = 0
+		# HL1
+		return 0
 	elif base == R:
-		el = 1
+		# HL1
+		return 1
 	else:
 		assert (False)
 
-	return el
+def get_explicit_levels_and_directions (runs, par_level):
 
-def explicit_embeddings (types, el):
+	class State:
+		def __init__ (self, level, dir):
+			self.level = level
+			self.dir = dir
 
-	out = []
+		def least_greatest_odd (self):
+			return self.level + 1 + (self.level % 2)
+		def least_greatest_even (self):
+			return self.level + 1 + 1-(self.level % 2)
 
-	# X1
-	cel = el # current embedding level
-	dos = ON # directional override status
+		@staticmethod
+		def level_would_be_valid (n):
+			return 0 <= n <= 61
+
 	stack = []
 
-	for t in types:
+	# X1
+	state = State (par_level, ON)
+	for r in runs:
 		# X2
-		if t == RLE:
-			nel = cel + 1 + (cel % 2)
-			stack.append ((cel, dos))
-			if nel <= 61:
-				cel = nel
-				dos = ON
-			continue
+		if r.type == RLE:
+			stack.append (state)
+			n = state.least_greatest_odd ()
+			if State.level_would_be_valid (n):
+				state = State (n, ON)
 		# X3
-		if t == LRE:
-			stack.append ((cel, dos))
-			nel = cel + 1 + 1 - (cel % 2)
-			if nel <= 61:
-				cel = nel
-				dos = ON
-			continue
+		if r.type == LRE:
+			stack.append (state)
+			n = state.least_greatest_even ()
+			if State.level_would_be_valid (n):
+				state = State (n, ON)
 		# X4
-		if t == RLO:
-			stack.append ((cel, dos))
-			nel = cel + 1 + (cel % 2)
-			if nel <= 61:
-				cel = nel
-				dos = R
-			continue
+		if r.type == RLO:
+			stack.append (state)
+			n = state.least_greatest_odd ()
+			if State.level_would_be_valid (n):
+				state = State (n, R)
 		# X5
-		if t == LRO:
-			stack.append ((cel, dos))
-			nel = cel + 1 + 1 - (cel % 2)
-			if nel <= 61:
-				cel = nel
-				dos = L
-			continue
-		if t == PDF:
+		if r.type == LRO:
+			stack.append (state)
+			n = state.least_greatest_even ()
+			if State.level_would_be_valid (n):
+				state = State (n, L)
+		# X8
+		# Note: X8 needs to be done before X6.  Spec bug.
+		if r.type == B:
 			if len (stack):
-				cel, dos = stack.pop ()
+				state = stack[0]
+				stack = []
+		# X6
+		if r.type not in [BN, RLE, LRE, RLO, LRO, PDF]:
+			r.level = state.level
+			if state.dir != ON:
+				r.type = state.dir
+		# X7
+		if r.type == PDF:
+			state = stack.pop ()
 			continue
-		if t == B:
-			# TODO
-			pass
-		if t not in [BN, RLE, LRE, RLO, LRO, PDF]:
-			cct = t # current character type
-			if dos == L:
-				cct = L
-			if dos == R:
-				cct = R
-			out.append ([t, cel])
-			continue
-
-	return out
+		# X9
+		if r.type in [RLE, LRE, RLO, LRO, PDF, BN]:
+			r.level = -1 # To be removed
+	return runs
 
 
+def bidi_par (runs, base):
 
-def bidi_par (types, base):
+	par_level = get_paragraph_embedding_level (runs, base)
 
-	el = paragraph_level (types, base)
+	runs = get_explicit_levels_and_directions (runs, par_level)
 
-	elts = explicit_embeddings (types, el)
+	# Separate removed characters, to add back after we're done.
+	removed = Run.compact_list (r for r in runs if r.level == -1)
+	runs = Run.compact_list (r for r in runs if r.level != -1)
 
-	return [x[0] for x in elts], [x[1] for x in elts]
+	# Do more bidi
+
+	return Run.merge_lists ([runs, removed])
 
 def bidi (types, base):
-	levels = []
-	order = []
-	# P1
-	start = 0
-	for i in range (len (types)):
-		if types[i] == 'B':
-			types, levels = bidi_par (types[start:i+1], base)
-			order.extend (types)
-			levels.extend (levels)
-			start = i + 1
-	types, levels = bidi_par (types[start:len (types)], base)
-	order.extend (types)
-	levels.extend (levels)
-	return levels, order
 
+	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
+
+	# P1
+	def split_at_B (run_lists, run):
+		run_lists[-1].append (run)
+		if run.type == B:
+			run_lists.append ([])
+		return run_lists
+	pars = reduce (split_at_B, runs, [[]])
+	runs = sum ((bidi_par (par, base) for par in pars), [])
+	return runs
+
+import sys
+types = sys.argv[1:]
+print bidi (types, ON)
 
 def do_tests (f):
 
@@ -169,5 +237,5 @@ def do_tests (f):
 if __name__ == '__main__':
 
 	import sys
-	for f in sys.argv[1:]:
-		do_tests (f)
+	#for f in sys.argv[1:]:
+	#	do_tests (f)
