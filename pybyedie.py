@@ -443,8 +443,9 @@ def reorder_line (levels):
 		return reorder
 
 	highest_level = max (r[1] for r in reorder)
-	# Note: it's ok to use 1 instead of "lowest odd level".
-	lowest_level = 1
+	lowest_level = min (r[1] for r in reorder)
+	if lowest_level % 2 == 0:
+		lowest_level += 1
 
 	for level in range (highest_level, lowest_level - 1, -1):
 		# Break into contiguous sequences.
