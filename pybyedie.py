@@ -41,7 +41,7 @@ def process_neighbors (items, n, func):
 def process_with_accumulator (items, func, accumulate, initial=None):
 	'''Calls func for each item, and an accumulated value of the previous
 	   items.  The accumulated value is the result of successively calling
-	   accumulate on the previous accmulated value and the current item.
+	   accumulate on the previous accumulated value and the current item.
 	   Accumulated value is initialized to initial.  Returns items when done.'''
 	acc = initial
 	for item in items:
@@ -118,11 +118,11 @@ class Run:
 		return reduce (append_run, runs, [])
 
 	@staticmethod
-	def last_strong_accumulator (last, run):
-		'''Remembers the last strong type seen.'''
+	def last_strong_accumulator (last_strong, run):
+		'''Returns the last strong type of last_strong and current run.'''
 		if run.type in strongs:
 			return run.type
-		return last
+		return last_strong
 
 
 def get_paragraph_embedding_level (runs, base):
