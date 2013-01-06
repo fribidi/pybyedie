@@ -2,7 +2,7 @@
 
 # Copyright (C) 2013  Google, Inc.
 #
-# This is a reference implementation of UAX#9 Unicode Bidirectional Algorithm.
+# This is PyByeDie, a reference implementation of UAX#9 Unicode Bidirectional Algorithm.
 #
 # License TBD.
 #
