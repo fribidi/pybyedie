@@ -232,10 +232,9 @@ def do_explicit_levels_and_directions (runs, par_level):
 		# (pop) the last remembered (pushed) embedding level and
 		# directional override.
 		#
-		# Note: We don't care about validity, since we pushed an
+		# Note: We don't care about validity, since we pushed a
 		# state even for invalid marks.
 		if r.type == PDF:
-
 			for i in range (len (r)):
 				if stack:
 					state = stack.pop ()
@@ -374,6 +373,7 @@ def resolve_level_run (runs, sor, eor):
 	runs = resolve_neutral_types (runs)
 	runs = resolve_implicit_levels (runs)
 
+	# Drop sentinels and return.
 	return [r for r in runs if r.level != -1]
 
 def resolve_per_level_run_stuff (runs, par_level):
@@ -395,6 +395,7 @@ def resolve_per_level_run_stuff (runs, par_level):
 
 	runs = map (resolve_level_run, runs, sors, eors)
 
+	# Put together and return,
 	return sum (runs, [])
 
 def do_per_line_stuff (levels, par_level, orig_types):
@@ -415,6 +416,7 @@ def do_per_line_stuff (levels, par_level, orig_types):
 
 	assert (len (levels) == len (orig_types))
 
+	# Do it all.
 	reset = True
 	for i in reversed (range (len (levels))):
 		if levels[i] == -1:
@@ -426,6 +428,8 @@ def do_per_line_stuff (levels, par_level, orig_types):
 		if reset:
 			levels[i] = par_level
 
+	return levels
+
 def reorder_line (levels):
 	'''L2. From the highest level found in the text to the lowest odd level
 	   on each line, including intermediate levels not actually present in
@@ -433,7 +437,7 @@ def reorder_line (levels):
 	   that level or higher.'''
 
 	reorder = [r for r in enumerate (levels) if r[1] != -1]
-	# reorder now is tuples of (index,level)
+	# reorder now is tuples of (index,level).
 
 	if not reorder:
 		return reorder
@@ -443,28 +447,27 @@ def reorder_line (levels):
 	lowest_level = 1
 
 	for level in range (highest_level, lowest_level - 1, -1):
-		# Break into contiguous sequences
+		# Break into contiguous sequences.
 		seqs = split (reorder, lambda a,b: (a[1] >= level) != (b[1] >= level))
-		# Reverse high-enough sequences
+		# Reverse high-enough sequences.
 		seqs = [list (reversed (s)) if s[0][1] >= level else s for s in seqs]
-		# Put it back together
+		# Put it back together.
 		reorder = sum (seqs, [])
 
-	# remove levels
-	reorder = [r[0] for r in reorder]
-
-	return reorder
+	# Remove levels and return.
+	return [r[0] for r in reorder]
 
 def bidi_par (types, base):
 
+	# Create runs.
 	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
 
 	par_level = get_paragraph_embedding_level (runs, base)
 
 	runs = do_explicit_levels_and_directions (runs, par_level)
-
 	runs = resolve_per_level_run_stuff (runs, par_level)
 
+	# Populate levels.
 	levels = [-1] * len (types)
 	for run in runs:
 		for r in run.ranges:
@@ -473,7 +476,7 @@ def bidi_par (types, base):
 
 	# Break lines here.  For each line do:
 
-	do_per_line_stuff (levels, par_level, types)
+	levels = do_per_line_stuff (levels, par_level, types)
 
 	reorder = reorder_line (levels)
 
@@ -490,6 +493,7 @@ def bidi (types, base):
 
 	# Merge them and return.
 	return (sum ((p[0] for p in pars), []), sum ((p[1] for p in pars), []))
+
 
 def test_case (lineno, types, base, expected_levels, expected_order):
 
