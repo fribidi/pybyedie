@@ -1,5 +1,45 @@
 #!/usr/bin/python
 
+
+def split (items, test):
+	'''Calls test with each two successive members of items,
+	   and if test returns True, cuts the list at that location.
+	   Returns list of non-empty lists.'''
+	if not items:
+		return []
+	last = items[0]
+	out = [[last]]
+	for item in items[1:]:
+		if test  (last, item):
+			out.append ([])
+		out[-1].append (item)
+		last = item
+	return out
+
+def process_neighbors (items, n, func):
+	'''Calls func with n parameters, for every successive n members of items.
+	   Returns items when done.'''
+	if len (items) < n:
+		return items
+	acc = items[:n - 1]
+	for item in items[n - 1:]:
+		acc.append (item)
+		func (*acc)
+		acc[:1] = []
+	return items
+
+def process_with_accumulator (items, func, accumulate, initial=None):
+	'''Calls func for each item, and an accumulated value of the previous
+	   items.  The accumulated value is the result of successively calling
+	   accumulate on the previous accmulated value and the current item.
+	   Accumulated value is initialized to initial.  Returns items when done.'''
+	acc = initial
+	for item in items:
+		func (item, acc)
+		acc = accumulate (acc, item)
+	return items
+
+
 L	= "L"
 R	= "R"
 AL	= "AL"
@@ -26,11 +66,13 @@ class Run:
 		self.type = type
 		self.level = level
 
-	def __repr__ (self):
-		return "Run(%s,%s,%s)" % (self.ranges, self.type, self.level)
-
+	def __len__ (self):
+		return sum (end - start for (start, end) in self.ranges)
 	def __cmp__ (self, other):
 		return cmp (self.ranges, other.ranges)
+
+	def __repr__ (self):
+		return "Run(%s,%s,%s)" % (self.ranges, self.type, self.level)
 
 	class Mismatch (Exception): pass
 	class TypeMismatch (Mismatch): pass
@@ -71,21 +113,6 @@ class Run:
 		return Run.compact_list (sorted (sum ((Run.uncompact_list (r) \
 						       for r in run_lists), \
 						      [])))
-
-def split (items, test):
-	'''Calls test with each two successive members of items,
-	   and if test returns True, cuts the list at that location.
-	   Returns list of non-empty lists.'''
-	if not items:
-		return []
-	last = items[0]
-	out = [[last]]
-	for item in items[1:]:
-		if test  (last, item):
-			out.append ([])
-		out[-1].append (item)
-		last = item
-	return out
 
 
 def get_paragraph_embedding_level (runs, base):
@@ -173,17 +200,80 @@ def do_explicit_levels_and_directions (runs, par_level):
 			r.level = -1 # To be removed
 	return runs
 
+def last_strong_accumulator (last, run):
+	if run.type in [L, R, AL]:
+		return run.type
+	return last
+
 def resolve_weak_types (runs):
-	
-	return Run.compact_list (runs)
+
+	def W1 (a, b):
+		'''Examine each nonspacing mark (NSM) in the level run, and
+		   change the type of the NSM to the type of the previous character.'''
+		if b.type == NSM:
+			b.type = a.type
+	runs = Run.compact_list (process_neighbors (runs, 2, W1))
+
+	def W2 (r, last_strong):
+		'''Search backward from each instance of a European number
+		   until the first strong type (R, L, AL, or sor) is found.
+		   If an AL is found, change the type of the European number
+		   to Arabic number.'''
+		if r.type == EN and last_strong == AL:
+			r.type = AN
+	runs = Run.compact_list (process_with_accumulator (runs, W2, \
+							   last_strong_accumulator, ON))
+
+	def W3 (r):
+		'''Change all ALs to R.'''
+		if r.type == AL:
+			r.type = R
+	runs = Run.compact_list (process_neighbors (runs, 1, W3))
+
+	def W4 (prev, this, next):
+		'''A single European separator between two European numbers
+		   changes to a European number. A single common separator
+		   between two numbers of the same type changes to that type.'''
+		if len (this) == 1:
+			if this.type == ES and prev.type == next.type == EN:
+				this.type = EN
+			if this.type == CS and prev.type == next.type and \
+			   prev.type in [EN, AN]:
+				this.type = prev.type
+	runs = Run.compact_list (process_neighbors (runs, 3, W4))
+
+	def W5 (prev, this, next):
+		'''A sequence of European terminators adjacent to European
+		   numbers changes to all European numbers.'''
+		if this.type == ET and EN in [prev.type, next.type]:
+			this.type = EN
+	runs = Run.compact_list (process_neighbors (runs, 3, W5))
+
+	def W6 (r):
+		'''Otherwise, separators and terminators change to Other Neutral.'''
+		if r.type in [ET, ES, CS]:
+			r.type = ON
+	runs = Run.compact_list (process_neighbors (runs, 1, W6))
+
+	def W7 (r, last_strong):
+		'''Search backward from each instance of a European number
+		   until the first strong type (R, L, or sor) is found. If
+		   an L is found, then change the type of the European number
+		   to L.'''
+		if r.type == EN and last_strong == L:
+			r.type = L
+	runs = Run.compact_list (process_with_accumulator (runs, W7, \
+							   last_strong_accumulator, ON))
+
+	return runs
 
 def resolve_neutral_types (runs):
-	
-	return Run.compact_list (runs)
+
+	return runs
 
 def resolve_implicit_levels (runs):
-	
-	return Run.compact_list (runs)
+
+	return runs
 
 def resolve_level_run (runs, sor, eor):
 
