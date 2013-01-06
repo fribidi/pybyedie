@@ -228,7 +228,7 @@ def do_explicit_levels_and_directions (runs, par_level):
 		if r.type in [RLE, LRE, RLO, LRO, PDF, BN]:
 			r.level = -1 # To be removed
 
-	return runs
+	return Run.compact_list (r for r in runs if r.level != -1)
 
 def resolve_weak_types (runs):
 
@@ -374,7 +374,7 @@ def resolve_per_level_run_stuff (runs, par_level):
 
 	return sum (runs, [])
 
-def do_per_line_stuff (runs, par_level):
+def do_per_line_stuff (levels, par_level, orig_types):
 	'''L1. On each line, reset the embedding level of the following
 	   characters to the paragraph embedding level:
 
@@ -390,11 +390,19 @@ def do_per_line_stuff (runs, par_level):
 	       * Because a Paragraph Separator breaks lines, there will be at
 	         most one per line, at the end of that line.'''
 
-	
-	return runs
+	assert (len (levels) == len (orig_types))
+
+	reset = True
+	for i in reversed (range (len (levels))):
+		if orig_types[i] in [S, B]:
+			reset = True
+		elif orig_types[i] != WS:
+			reset = False
+		if reset:
+			levels[i] = par_level
 
 
-def bidi_par (types, base):
+def bidi_par_levels (types, base):
 
 	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
 
@@ -402,20 +410,18 @@ def bidi_par (types, base):
 
 	runs = do_explicit_levels_and_directions (runs, par_level)
 
-	# Remove removed characters
-	runs = Run.compact_list (r for r in runs if r.level != -1)
-
 	runs = resolve_per_level_run_stuff (runs, par_level)
-
-	# Break lines here...
-
-	runs = do_per_line_stuff (runs, par_level)
 
 	levels = [-1] * len (types)
 	for run in runs:
 		for r in run.ranges:
 			for i in range (*r):
 				levels[i] = run.level
+
+	# Break lines here.  For each line do:
+
+	do_per_line_stuff (levels, par_level, types)
+
 	return levels
 
 def bidi_levels (types, base):
@@ -423,7 +429,7 @@ def bidi_levels (types, base):
 	# P1
 	pars = split (types, lambda t,_: t == B)
 
-	return sum ((bidi_par (par, base) for par in pars), [])
+	return sum ((bidi_par_levels (par, base) for par in pars), [])
 
 def bidi (types, base):
 
