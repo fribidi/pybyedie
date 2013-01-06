@@ -79,6 +79,10 @@ LRO	= "LRO"
 RLE	= "RLE"
 RLO	= "RLO"
 PDF	= "PDF"
+LRI	= "LRI"
+RLI	= "RLI"
+FSI	= "FSI"
+PDI	= "PDI"
 
 strongs = [L, R, AL]
 neutrals =  [B, S, WS, ON]
