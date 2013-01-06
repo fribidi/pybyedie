@@ -387,7 +387,29 @@ def resolve_per_level_run_stuff (runs, par_level):
 
 	return sum (runs, [])
 
-def bidi_par (runs, base):
+def do_per_line_stuff (runs, par_level):
+	'''L1. On each line, reset the embedding level of the following
+	   characters to the paragraph embedding level:
+
+	       1. Segment separators,
+	       2. Paragraph separators,
+	       3. Any sequence of whitespace characters preceding a segment
+	          separator or paragraph separator, and
+	       4. Any sequence of white space characters at the end of the line.
+
+	       * The types of characters used here are the original types, not
+	         those modified by the previous phase.
+
+	       * Because a Paragraph Separator breaks lines, there will be at
+	         most one per line, at the end of that line.'''
+
+	
+	return runs
+
+
+def bidi_par (types, base):
+
+	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
 
 	par_level = get_paragraph_embedding_level (runs, base)
 
@@ -399,27 +421,29 @@ def bidi_par (runs, base):
 
 	runs = resolve_per_level_run_stuff (runs, par_level)
 
-	return Run.merge_lists ([runs, removed])
+	# Break lines here...
 
-def bidi_runs (types, base):
+	runs = do_per_line_stuff (runs, par_level)
 
-	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
+	runs = Run.merge_lists ([runs, removed])
+
+	levels = [-1] * len (types)
+	for run in runs:
+		for r in run.ranges:
+			for i in range (*r):
+				levels[i] = run.level
+	return levels
+
+def bidi_levels (types, base):
 
 	# P1
-	pars = split (runs, lambda r,_: r.type == B)
+	pars = split (types, lambda t,_: t == B)
 
 	return sum ((bidi_par (par, base) for par in pars), [])
 
 def bidi (types, base):
 
-	runs = bidi_runs (types, base)
-
-	levels = [0] * len (types)
-	for run in runs:
-		for r in run.ranges:
-			for i in range (*r):
-				levels[i] = run.level
-
+	levels = bidi_levels (types, base)
 	reorder = []
 
 	return (levels, reorder)
@@ -473,7 +497,7 @@ def test_file (f):
 				num_fails += 1
 
 	if num_fails:
-		print "%d error", num_fails
+		print "%d error" % num_fails
 
 	return num_fails == 0
 
