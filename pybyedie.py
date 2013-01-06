@@ -11,7 +11,7 @@
 
 import itertools
 
-def split (items, test):
+def split_if (items, test):
 	'''Calls test with each two successive members of items,
 	   and if test returns True, cuts the list at that location.
 	   Returns list of non-empty lists.'''
@@ -385,7 +385,7 @@ def resolve_per_level_run_stuff (runs, par_level):
 	   base embedding level). If the higher level is odd, the type is R;
 	   otherwise, it is L.'''
 
-	runs = split (runs, lambda a,b: a.level != b.level)
+	runs = split_if (runs, lambda a,b: a.level != b.level)
 	# runs now is list of list of runs at same level
 
 	levels = [r[0].level for r in runs]
@@ -449,7 +449,7 @@ def reorder_line (levels):
 
 	for level in range (highest_level, lowest_level - 1, -1):
 		# Break into contiguous sequences.
-		seqs = split (reorder, lambda a,b: (a[1] >= level) != (b[1] >= level))
+		seqs = split_if (reorder, lambda a,b: (a[1] >= level) != (b[1] >= level))
 		# Reverse high-enough sequences.
 		seqs = [list (reversed (s)) if s[0][1] >= level else s for s in seqs]
 		# Put it back together.
@@ -488,7 +488,7 @@ def bidi (types, base):
 	# P1. Split the text into separate paragraphs. A paragraph separator
 	# is kept with the previous paragraph. Within each paragraph, apply
 	# all the other rules of this algorithm.
-	pars = split (types, lambda t,_: t == B)
+	pars = split_if (types, lambda t,_: t == B)
 	pars = [bidi_par (par, base) for par in pars]
 	# pars now has (levels,reorder) per paragraph.
 
