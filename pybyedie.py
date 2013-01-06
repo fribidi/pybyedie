@@ -444,21 +444,48 @@ def bidi_levels (types, base):
 
 	return sum ((bidi_par_levels (par, base) for par in pars), [])
 
+def reorder_line (reorder):
+	'''L2. From the highest level found in the text to the lowest odd level
+	   on each line, including intermediate levels not actually present in
+	   the text, reverse any contiguous sequence of characters that are at
+	   that level or higher.'''
+
+	if not reorder:
+		return reorder
+
+	highest_level = max (r[1] for r in reorder)
+	# Note: it's ok to use 1 instead of "lowest odd level".
+	lowest_level = 1
+
+	for level in range (highest_level, lowest_level - 1, -1):
+		# Break into contiguous sequences
+		seqs = split (reorder, lambda a,b: (a[1] >= level) != (b[1] >= level))
+		# Reverse high-enough sequences
+		seqs = [list (reversed (s)) if s[0][1] >= level else s for s in seqs]
+		# Put it back together
+		reorder = sum (seqs, [])
+
+	return reorder
+
 def bidi (types, base):
 
 	levels = bidi_levels (types, base)
 
-	reorder = range (len (types))
+	reorder = [r for r in enumerate (levels) if r[1] != -1]
+	# reorder now is tuples of (index,level)
 
-	# Remove removed items
-	reorder = list (itertools.compress (reorder, (l != -1 for l in levels)))
+	# XXX Move this to per-line place
+	reorder = reorder_line (reorder)
+
+	# remove levels
+	reorder = [r[0] for r in reorder]
 
 	return (levels, reorder)
 
 def test_case (lineno, types, base, expected_levels, expected_order):
 
 	(levels, order) = bidi (types, base)
-	if levels == expected_levels:# and order == expected_order:
+	if levels == expected_levels and order == expected_order:
 		return True
 
 	print "failure on line", lineno
