@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import itertools
 
 def split (items, test):
 	'''Calls test with each two successive members of items,
@@ -120,7 +121,7 @@ def get_paragraph_embedding_level (runs, base):
 	if base == ON:
 		try:
 			# P2
-			first = (r for r in runs if r.type in strongs).next ()
+			first = next (r for r in runs if r.type in strongs)
 			# P3
 			return 1 if first.type in [AL, R] else 0
 		except StopIteration:
@@ -446,7 +447,11 @@ def bidi_levels (types, base):
 def bidi (types, base):
 
 	levels = bidi_levels (types, base)
-	reorder = []
+
+	reorder = range (len (types))
+
+	# Remove removed items
+	reorder = list (itertools.compress (reorder, (l != -1 for l in levels)))
 
 	return (levels, reorder)
 
