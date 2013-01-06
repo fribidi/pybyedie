@@ -108,19 +108,6 @@ class Run:
 		return reduce (append_run, runs, [])
 
 	@staticmethod
-	def uncompact_list (runs):
-
-		return [Run ([range], run.type, run.level) \
-			for run in runs \
-			for range in run.ranges]
-
-	@staticmethod
-	def merge_lists (run_lists):
-		return Run.compact_list (sorted (sum ((Run.uncompact_list (r) \
-						       for r in run_lists), \
-						      [])))
-
-	@staticmethod
 	def last_strong_accumulator (last, run):
 		'''Remembers the last strong type seen.'''
 		if run.type in strongs:
@@ -415,8 +402,7 @@ def bidi_par (types, base):
 
 	runs = do_explicit_levels_and_directions (runs, par_level)
 
-	# Separate removed characters, to add back after we're done.
-	removed = Run.compact_list (r for r in runs if r.level == -1)
+	# Remove removed characters
 	runs = Run.compact_list (r for r in runs if r.level != -1)
 
 	runs = resolve_per_level_run_stuff (runs, par_level)
@@ -424,8 +410,6 @@ def bidi_par (types, base):
 	# Break lines here...
 
 	runs = do_per_line_stuff (runs, par_level)
-
-	runs = Run.merge_lists ([runs, removed])
 
 	levels = [-1] * len (types)
 	for run in runs:
