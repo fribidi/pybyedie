@@ -397,6 +397,8 @@ def do_per_line_stuff (levels, par_level, orig_types):
 
 	reset = True
 	for i in reversed (range (len (levels))):
+		if levels[i] == -1:
+			continue
 		if orig_types[i] in [S, B]:
 			reset = True
 		elif orig_types[i] != WS:
