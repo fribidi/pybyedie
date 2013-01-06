@@ -307,8 +307,8 @@ def resolve_neutral_types (runs):
 		   Start-of-level-run (sor) and end-of-level-run (eor) are
 		   used at level run boundaries.'''
 		if this.type in neutrals:
-			p = R if prev.type in [R, EN, AN] else L
-			n = R if next.type in [R, EN, AN] else L
+			p = R if prev.type in [R, EN, AN] else prev.type
+			n = R if next.type in [R, EN, AN] else next.type
 			if p == n:
 				this.type = p
 	runs = Run.compact_list (process_neighbors (runs, 3, N1))
