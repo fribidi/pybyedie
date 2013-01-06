@@ -299,6 +299,13 @@ def resolve_weak_types (runs):
 
 def resolve_neutral_types (runs):
 
+	def _N0 (this):
+		'''Note: Consolidate all neutrals. The rest of the rules
+		   consider all neutrals as a single run, so make it so.'''
+		if this.type in neutrals:
+			this.type = ON
+	runs = Run.compact_list (process_neighbors (runs, 1, _N0))
+
 	def N1 (prev, this, next):
 		'''A sequence of neutrals takes the direction of the
 		   surrounding strong text if the text on both sides has the
@@ -306,7 +313,7 @@ def resolve_neutral_types (runs):
 		   were R in terms of their influence on neutrals.
 		   Start-of-level-run (sor) and end-of-level-run (eor) are
 		   used at level run boundaries.'''
-		if this.type in neutrals:
+		if this.type == ON:
 			p = R if prev.type in [R, EN, AN] else prev.type
 			n = R if next.type in [R, EN, AN] else next.type
 			if p == n:
@@ -315,7 +322,7 @@ def resolve_neutral_types (runs):
 
 	def N2 (this):
 		'''Any remaining neutrals take the embedding direction.'''
-		if this.type in neutrals:
+		if this.type == ON:
 			this.type = type_for_level (this.level)
 	runs = Run.compact_list (process_neighbors (runs, 1, N2))
 
