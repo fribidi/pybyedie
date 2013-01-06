@@ -1,5 +1,14 @@
 #!/usr/bin/python
 
+# Copyright (C) 2013  Google, Inc.
+#
+# This is a reference implementation of UAX#9 Unicode Bidirectional Algorithm.
+#
+# License TBD.
+#
+# Google Author(s):
+#   Behdad Esfahbod
+
 import itertools
 
 def split (items, test):
