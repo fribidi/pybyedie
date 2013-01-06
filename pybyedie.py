@@ -120,18 +120,21 @@ def get_paragraph_embedding_level (runs, base):
 
 	if base == ON:
 		try:
-			# P2
+			# P2. In each paragraph, find the first character of
+			# type L, AL, or R.
 			first = next (r for r in runs if r.type in strongs)
-			# P3
+			# P3. If a character is found in P2 and it is of type
+			# AL or R, then set the paragraph embedding level to
+			# one; otherwise, set it to zero.
 			return 1 if first.type in [AL, R] else 0
 		except StopIteration:
-			# P3
+			# P3.
 			return 0
 	elif base == L:
-		# HL1
+		# HL1. Override P3, and set the paragraph embedding level explicitly.
 		return 0
 	elif base == R:
-		# HL1
+		# HL1. Override P3, and set the paragraph embedding level explicitly.
 		return 1
 	else:
 		assert (False)
@@ -414,8 +417,36 @@ def do_per_line_stuff (levels, par_level, orig_types):
 		if reset:
 			levels[i] = par_level
 
+def reorder_line (levels):
+	'''L2. From the highest level found in the text to the lowest odd level
+	   on each line, including intermediate levels not actually present in
+	   the text, reverse any contiguous sequence of characters that are at
+	   that level or higher.'''
 
-def bidi_par_levels (types, base):
+	reorder = [r for r in enumerate (levels) if r[1] != -1]
+	# reorder now is tuples of (index,level)
+
+	if not reorder:
+		return reorder
+
+	highest_level = max (r[1] for r in reorder)
+	# Note: it's ok to use 1 instead of "lowest odd level".
+	lowest_level = 1
+
+	for level in range (highest_level, lowest_level - 1, -1):
+		# Break into contiguous sequences
+		seqs = split (reorder, lambda a,b: (a[1] >= level) != (b[1] >= level))
+		# Reverse high-enough sequences
+		seqs = [list (reversed (s)) if s[0][1] >= level else s for s in seqs]
+		# Put it back together
+		reorder = sum (seqs, [])
+
+	# remove levels
+	reorder = [r[0] for r in reorder]
+
+	return reorder
+
+def bidi_par (types, base):
 
 	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
 
@@ -435,52 +466,21 @@ def bidi_par_levels (types, base):
 
 	do_per_line_stuff (levels, par_level, types)
 
-	return levels
+	reorder = reorder_line (levels)
 
-def bidi_levels (types, base):
-
-	# P1
-	pars = split (types, lambda t,_: t == B)
-
-	return sum ((bidi_par_levels (par, base) for par in pars), [])
-
-def reorder_line (reorder):
-	'''L2. From the highest level found in the text to the lowest odd level
-	   on each line, including intermediate levels not actually present in
-	   the text, reverse any contiguous sequence of characters that are at
-	   that level or higher.'''
-
-	if not reorder:
-		return reorder
-
-	highest_level = max (r[1] for r in reorder)
-	# Note: it's ok to use 1 instead of "lowest odd level".
-	lowest_level = 1
-
-	for level in range (highest_level, lowest_level - 1, -1):
-		# Break into contiguous sequences
-		seqs = split (reorder, lambda a,b: (a[1] >= level) != (b[1] >= level))
-		# Reverse high-enough sequences
-		seqs = [list (reversed (s)) if s[0][1] >= level else s for s in seqs]
-		# Put it back together
-		reorder = sum (seqs, [])
-
-	return reorder
+	return (levels, reorder)
 
 def bidi (types, base):
 
-	levels = bidi_levels (types, base)
+	# P1. Split the text into separate paragraphs. A paragraph separator
+	# is kept with the previous paragraph. Within each paragraph, apply
+	# all the other rules of this algorithm.
+	pars = split (types, lambda t,_: t == B)
+	pars = [bidi_par (par, base) for par in pars]
+	# pars now has (levels,reorder) per paragraph.
 
-	reorder = [r for r in enumerate (levels) if r[1] != -1]
-	# reorder now is tuples of (index,level)
-
-	# XXX Move this to per-line place
-	reorder = reorder_line (reorder)
-
-	# remove levels
-	reorder = [r[0] for r in reorder]
-
-	return (levels, reorder)
+	# Merge them and return.
+	return (sum ((p[0] for p in pars), []), sum ((p[1] for p in pars), []))
 
 def test_case (lineno, types, base, expected_levels, expected_order):
 
