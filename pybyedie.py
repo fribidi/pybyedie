@@ -178,17 +178,18 @@ def do_explicit_levels_and_directions (runs, par_level):
 		# Note: We always push onto the stack even for invalid levels.
 		# This makes finding the "matching" state for PDFs trivial.
 		if r.type in [RLE, LRE, RLO, LRO]:
-			stack.append (state)
-			if r.type in [RLE, RLO]:
-				n = state.least_greatest_odd ()
-			else:
-				n = state.least_greatest_even ()
-			if State.level_would_be_valid (n):
-				if r.type in [RLE, LRE]:
-					t = ON
+			for i in range (len (r)):
+				stack.append (state)
+				if r.type in [RLE, RLO]:
+					n = state.least_greatest_odd ()
 				else:
-					t = R if r.type == RLO else L
-				state = State (n, t)
+					n = state.least_greatest_even ()
+				if State.level_would_be_valid (n):
+					if r.type in [RLE, LRE]:
+						t = ON
+					else:
+						t = R if r.type == RLO else L
+					state = State (n, t)
 
 		# X8. All explicit directional embeddings and overrides
 		# are completely terminated at the end of each paragraph.
@@ -221,8 +222,10 @@ def do_explicit_levels_and_directions (runs, par_level):
 		# Note: We don't care about validity, since we pushed an
 		# state even for invalid marks.
 		if r.type == PDF:
-			if stack:
-				state = stack.pop ()
+
+			for i in range (len (r)):
+				if stack:
+					state = stack.pop ()
 
 		# X9. Remove all RLE, LRE, RLO, LRO, PDF, and BN codes.
 		if r.type in [RLE, LRE, RLO, LRO, PDF, BN]:
