@@ -25,7 +25,7 @@ def process_neighbors (items, n, func):
 	for item in items[n - 1:]:
 		acc.append (item)
 		func (*acc)
-		acc[:1] = []
+		del acc[0]
 	return items
 
 def process_with_accumulator (items, func, accumulate, initial=None):
@@ -110,7 +110,7 @@ class Run:
 	@staticmethod
 	def uncompact_list (runs):
 
-		return [Run (range, run.type, run.level) \
+		return [Run ([range], run.type, run.level) \
 			for run in runs \
 			for range in run.ranges]
 
@@ -234,8 +234,8 @@ def do_explicit_levels_and_directions (runs, par_level):
 		# Note: We don't care about validity, since we pushed an
 		# state even for invalid marks.
 		if r.type == PDF:
-			state = stack.pop ()
-			continue
+			if stack:
+				state = stack.pop ()
 
 		# X9. Remove all RLE, LRE, RLO, LRO, PDF, and BN codes.
 		if r.type in [RLE, LRE, RLO, LRO, PDF, BN]:
@@ -333,12 +333,31 @@ def resolve_neutral_types (runs):
 
 def resolve_implicit_levels (runs):
 
+	def I1 (this):
+		'''For all characters with an even (left-to-right) embedding
+		   direction, those of type R go up one level and those of
+		   type AN or EN go up two levels.'''
+		if this.level % 2 == 0:
+			if this.type == R:
+				this.level += 1
+			if this.type in [AN, EN]:
+				this.level += 2
+	runs = Run.compact_list (process_neighbors (runs, 1, I1))
+
+	def I2 (this):
+		'''For all characters with an odd (right-to-left) embedding
+		   direction, those of type L, EN or AN go up one level.'''
+		if this.level % 2 == 1:
+			if this.type in [L, EN, AN]:
+				this.level += 1
+	runs = Run.compact_list (process_neighbors (runs, 1, I2))
+
 	return runs
 
 def resolve_level_run (runs, sor, eor):
 
 	# Create sentinels for sor, eor
-	runs = [Run ((-1,0), sor, -1)] + runs + [Run ((-1,0), eor, -1)]
+	runs = [Run ([(-1,-1)], sor, -1)] + runs + [Run ([(2147483647,2147483647)], eor, -1)]
 	# The functions we call don't have to worry about sor, eor
 
 	runs = resolve_weak_types (runs)
@@ -382,22 +401,48 @@ def bidi_par (runs, base):
 
 	return Run.merge_lists ([runs, removed])
 
-def bidi (types, base):
+def bidi_runs (types, base):
 
 	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
 
 	# P1
 	pars = split (runs, lambda r,_: r.type == B)
 
-	runs = sum ((bidi_par (par, base) for par in pars), [])
-	return runs
+	return sum ((bidi_par (par, base) for par in pars), [])
 
-import sys
-types = sys.argv[1:]
-print bidi (types, ON)
+def bidi (types, base):
 
-def do_tests (f):
+	runs = bidi_runs (types, base)
 
+	levels = [0] * len (types)
+	for run in runs:
+		for r in run.ranges:
+			for i in range (*r):
+				levels[i] = run.level
+
+	reorder = []
+
+	return (levels, reorder)
+
+def test_case (lineno, types, base, expected_levels, expected_order):
+
+	(levels, order) = bidi (types, base)
+	if levels == expected_levels:# and order == expected_order:
+		return True
+
+	print "failure on line", lineno
+	print "input is:", ' '.join (types)
+	print "base dir:", base
+	print "expected levels:", ' '.join (str (x) if x != -1 else 'x' for x in expected_levels)
+	print "returned levels:", ' '.join (str (x) if x != -1 else 'x'  for x in levels)
+	print "expected order:", ' '.join (str (x) for x in expected_order)
+	print "returned order:", ' '.join (str (x) for x in order)
+	print
+	return False
+
+def test_file (f):
+
+	num_fails = 0
 	lineno = 0
 	for l in file (f):
 		lineno += 1
@@ -408,10 +453,10 @@ def do_tests (f):
 		if l[0] == '@':
 
 			if l.startswith ('@Levels:'):
-				expected_levels = l[8:].split ()
+				expected_levels = [int (i) if i != 'x' else -1 for i in l[8:].split ()]
 				continue
 			if l.startswith ('@Reorder:'):
-				expected_order = l[9:].split ()
+				expected_order = [int (i) for i in l[9:].split ()]
 				continue
 			continue
 
@@ -423,20 +468,42 @@ def do_tests (f):
 			if not ((1<<f) & flags):
 				continue
 			base = ['ON', 'L', 'R'][f]
-			(levels, order) = bidi (types, base)
-			if not (levels == expected_levels and order == expected_order):
-				print "failure on line", lineno
-				print "int is:", ' '.join (types)
-				print "base dir:", base
-				print "expected levels:", ' '.join (expected_levels)
-				print "returned levels:", ' '.join (str(x) for x in levels)
-				print "expected order:", ' '.join (expected_order)
-				print "returned order:", ' '.join (str(x) for x in order)
-				print
+			if not test_case (lineno, types, base, \
+					  expected_levels, expected_order):
+				num_fails += 1
+
+	if num_fails:
+		print "%d error", num_fails
+
+	return num_fails == 0
 
 
 if __name__ == '__main__':
 
 	import sys
-	#for f in sys.argv[1:]:
-	#	do_tests (f)
+
+	args = sys.argv[1:]
+
+	if not sys.argv[1:]:
+		print >>sys.stderr, "Usage:\n  pybyedie [--rtl/--ltr/--auto] [TYPE]...\nor\n  pybyedie --test [FILE]..."
+		sys.exit (1)
+
+	if args[0] == "--test":
+		del args[0]
+		success = True
+		for f in args:
+			success = test_file (f) and success
+		sys.exit (0 if success else 1)
+
+	base = ON
+	if args[0] == "--rtl":
+		base = R
+		del args[0]
+	if args[0] == "--ltr":
+		base = L
+		del args[0]
+	if args[0] == "--auto":
+		base = ON
+		del args[0]
+
+	print bidi (args, base)
