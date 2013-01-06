@@ -60,6 +60,12 @@ RLE	= "RLE"
 RLO	= "RLO"
 PDF	= "PDF"
 
+strongs = [L, R, AL]
+neutrals =  [B, S, WS, ON]
+
+def type_for_level (n):
+	return [L, R][n % 2]
+
 class Run:
 	def __init__ (self, ranges, type, level):
 		self.ranges = ranges
@@ -114,13 +120,20 @@ class Run:
 						       for r in run_lists), \
 						      [])))
 
+	@staticmethod
+	def last_strong_accumulator (last, run):
+		'''Remembers the last strong type seen.'''
+		if run.type in strongs:
+			return run.type
+		return last
+
 
 def get_paragraph_embedding_level (runs, base):
 
 	if base == ON:
 		try:
 			# P2
-			first = (r for r in runs if r.type in [L, AL, R]).next ()
+			first = (r for r in runs if r.type in strongs).next ()
 			# P3
 			return 1 if first.type in [AL, R] else 0
 		except StopIteration:
@@ -153,81 +166,108 @@ def do_explicit_levels_and_directions (runs, par_level):
 
 	stack = []
 
-	# X1
+	# X1. Begin by setting the current embedding level to the paragraph
+	# embedding level. Set the directional override status to neutral.
+	# Process each character iteratively, applying rules X2 through X9.
+	# Only embedding levels from 0 to 61 are valid in this phase.
 	state = State (par_level, ON)
 	for r in runs:
-		# X2
-		if r.type == RLE:
+
+		# X2, X3, X4, X5. With each RLE/LRE/RLO/LRO, compute the
+		# next embeddeing level.  For RLE/RLO that would be the
+		# least greater odd value, for LRE/LRO the least greater
+		# even value.
+		#
+		#     a. If this new level would be valid, then this embedding
+		#        code is valid. Remember (push) the current embedding
+		#        level and override status. Reset the current level to
+		#        this new level, and reset the override status to
+		#        neutral for RLE/LRE, or to R/L for RLO/LRO respectively.
+		#
+		#     b. If the new level would not be valid, then this code is
+		#        invalid. Do not change the current level or override
+		#        status.
+		#
+		# Note: We always push onto the stack even for invalid levels.
+		# This makes finding the "matching" state for PDFs trivial.
+		if r.type in [RLE, LRE, RLO, LRO]:
 			stack.append (state)
-			n = state.least_greatest_odd ()
+			if r.type in [RLE, RLO]:
+				n = state.least_greatest_odd ()
+			else:
+				n = state.least_greatest_even ()
 			if State.level_would_be_valid (n):
-				state = State (n, ON)
-		# X3
-		if r.type == LRE:
-			stack.append (state)
-			n = state.least_greatest_even ()
-			if State.level_would_be_valid (n):
-				state = State (n, ON)
-		# X4
-		if r.type == RLO:
-			stack.append (state)
-			n = state.least_greatest_odd ()
-			if State.level_would_be_valid (n):
-				state = State (n, R)
-		# X5
-		if r.type == LRO:
-			stack.append (state)
-			n = state.least_greatest_even ()
-			if State.level_would_be_valid (n):
-				state = State (n, L)
-		# X8
+				if r.type in [RLE, LRE]:
+					t = ON
+				else:
+					t = R if r.type == RLO else L
+				state = State (n, t)
+
+		# X8. All explicit directional embeddings and overrides
+		# are completely terminated at the end of each paragraph.
+		# Paragraph separators are not included in the embedding.
+		#
 		# Note: X8 needs to be done before X6.  Spec bug.
 		if r.type == B:
 			if len (stack):
 				state = stack[0]
 				stack = []
-		# X6
+
+		# X6. For all types besides BN, RLE, LRE, RLO, LRO, and PDF:
+		#
+		#     a. Set the level of the current character to the current
+		#        embedding level.
+		#
+		#     b. Whenever the directional override status is not
+		#        neutral, reset the current character type according to
+		#        the directional override status.
 		if r.type not in [BN, RLE, LRE, RLO, LRO, PDF]:
 			r.level = state.level
 			if state.dir != ON:
 				r.type = state.dir
-		# X7
+
+		# X7. With each PDF, determine the matching embedding or
+		# override code. If there was a valid matching code, restore
+		# (pop) the last remembered (pushed) embedding level and
+		# directional override.
+		#
+		# Note: We don't care about validity, since we pushed an
+		# state even for invalid marks.
 		if r.type == PDF:
 			state = stack.pop ()
 			continue
-		# X9
+
+		# X9. Remove all RLE, LRE, RLO, LRO, PDF, and BN codes.
 		if r.type in [RLE, LRE, RLO, LRO, PDF, BN]:
 			r.level = -1 # To be removed
-	return runs
 
-def last_strong_accumulator (last, run):
-	if run.type in [L, R, AL]:
-		return run.type
-	return last
+	return runs
 
 def resolve_weak_types (runs):
 
-	def W1 (a, b):
+	def W1 (prev, this):
 		'''Examine each nonspacing mark (NSM) in the level run, and
-		   change the type of the NSM to the type of the previous character.'''
-		if b.type == NSM:
-			b.type = a.type
+		   change the type of the NSM to the type of the previous
+		   character. If the NSM is at the start of the level run,
+		   it will get the type of sor.'''
+		if this.type == NSM:
+			this.type = prev.type
 	runs = Run.compact_list (process_neighbors (runs, 2, W1))
 
-	def W2 (r, last_strong):
+	def W2 (this, last_strong):
 		'''Search backward from each instance of a European number
 		   until the first strong type (R, L, AL, or sor) is found.
 		   If an AL is found, change the type of the European number
 		   to Arabic number.'''
-		if r.type == EN and last_strong == AL:
-			r.type = AN
+		if this.type == EN and last_strong == AL:
+			this.type = AN
 	runs = Run.compact_list (process_with_accumulator (runs, W2, \
-							   last_strong_accumulator, ON))
+							   Run.last_strong_accumulator, ON))
 
-	def W3 (r):
+	def W3 (this):
 		'''Change all ALs to R.'''
-		if r.type == AL:
-			r.type = R
+		if this.type == AL:
+			this.type = R
 	runs = Run.compact_list (process_neighbors (runs, 1, W3))
 
 	def W4 (prev, this, next):
@@ -249,25 +289,45 @@ def resolve_weak_types (runs):
 			this.type = EN
 	runs = Run.compact_list (process_neighbors (runs, 3, W5))
 
-	def W6 (r):
+	def W6 (this):
 		'''Otherwise, separators and terminators change to Other Neutral.'''
-		if r.type in [ET, ES, CS]:
-			r.type = ON
+		if this.type in [ET, ES, CS]:
+			this.type = ON
 	runs = Run.compact_list (process_neighbors (runs, 1, W6))
 
-	def W7 (r, last_strong):
+	def W7 (this, last_strong):
 		'''Search backward from each instance of a European number
 		   until the first strong type (R, L, or sor) is found. If
 		   an L is found, then change the type of the European number
 		   to L.'''
-		if r.type == EN and last_strong == L:
-			r.type = L
+		if this.type == EN and last_strong == L:
+			this.type = L
 	runs = Run.compact_list (process_with_accumulator (runs, W7, \
-							   last_strong_accumulator, ON))
+							   Run.last_strong_accumulator, ON))
 
 	return runs
 
 def resolve_neutral_types (runs):
+
+	def N1 (prev, this, next):
+		'''A sequence of neutrals takes the direction of the
+		   surrounding strong text if the text on both sides has the
+		   same direction. European and Arabic numbers act as if they
+		   were R in terms of their influence on neutrals.
+		   Start-of-level-run (sor) and end-of-level-run (eor) are
+		   used at level run boundaries.'''
+		if this.type in neutrals:
+			p = R if prev.type in [R, EN, AN] else L
+			n = R if next.type in [R, EN, AN] else L
+			if p == n:
+				this.type = p
+	runs = Run.compact_list (process_neighbors (runs, 3, N1))
+
+	def N2 (this):
+		'''Any remaining neutrals take the embedding direction.'''
+		if this.type in neutrals:
+			this.type = type_for_level (this.level)
+	runs = Run.compact_list (process_neighbors (runs, 1, N2))
 
 	return runs
 
@@ -279,19 +339,29 @@ def resolve_level_run (runs, sor, eor):
 
 	# Create sentinels for sor, eor
 	runs = [Run ((-1,0), sor, -1)] + runs + [Run ((-1,0), eor, -1)]
+	# The functions we call don't have to worry about sor, eor
 
 	runs = resolve_weak_types (runs)
+	runs = resolve_neutral_types (runs)
+	runs = resolve_implicit_levels (runs)
 
 	return [r for r in runs if r.level != -1]
 
 def resolve_per_level_run_stuff (runs, par_level):
+	'''X10. The remaining rules are applied to each run of characters at
+	   the same level. For each run, determine the start-of-level-run (sor)
+	   and end-of-level-run (eor) type, either L or R. This depends on the
+	   higher of the two levels on either side of the boundary (at the
+	   start or end of the paragraph, the level of the "other" run is the
+	   base embedding level). If the higher level is odd, the type is R;
+	   otherwise, it is L.'''
 
 	runs = split (runs, lambda a,b: a.level != b.level)
 	# runs now is list of list of runs at same level
 
 	levels = [r[0].level for r in runs]
-	sors = [[L,R][max (pair) % 2] for pair in zip (levels, [par_level]+levels[:-1])]
-	eors = [[L,R][max (pair) % 2] for pair in zip (levels[1:]+[par_level], levels )]
+	sors = [type_for_level (max (pair)) for pair in zip (levels, [par_level]+levels[:-1])]
+	eors = [type_for_level (max (pair)) for pair in zip (levels[1:]+[par_level], levels )]
 	del levels
 
 	runs = map (resolve_level_run, runs, sors, eors)
