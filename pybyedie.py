@@ -577,4 +577,6 @@ if __name__ == '__main__':
 		base = ON
 		del args[0]
 
-	print bidi (args, base)
+	(levels, reorder) = bidi (args, base)
+	print "Levels:  %s" % ' '.join (str (l) if l != -1 else 'x' for l in levels)
+	print "Reorder: %s" % ' '.join (str (l) for l in reorder)
