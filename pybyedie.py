@@ -93,11 +93,11 @@ def type_for_level (n):
 	return [L, R][n % 2]
 
 class Run:
-	def __init__ (self, ranges, type, level = 0, data = None):
+	def __init__ (self, ranges, type, level = 0, list = []):
 		self.ranges = ranges
 		self.type = type
 		self.level = level
-		self.data = data
+		self.list = list
 
 	def __len__ (self):
 		return sum (end - start for (start, end) in self.ranges)
@@ -106,17 +106,17 @@ class Run:
 
 	def __repr__ (self):
 		return "Run(%s,%s,%s%s)" % (self.ranges, self.type, self.level, \
-					    "," + repr (self.data) if self.data else "")
+					    "," + repr (self.list) if self.list else "")
 
 	class Mismatch (Exception): pass
 	class TypeMismatch (Mismatch): pass
 	class LevelMismatch (Mismatch): pass
-	class DataMismatch (Mismatch): pass
+	class ListMismatch (Mismatch): pass
 
 	def append (self, other):
 		if self.type  != other.type:  raise Run.TypeMismatch ()
 		if self.level != other.level: raise Run.LevelMismatch ()
-		if self.data  != other.data:  raise Run.DataMismatch ()
+		if self.list  != other.list:  raise Run.ListMismatch ()
 		assert self.ranges[-1][1] <= other.ranges[0][0]
 		if self.ranges[-1][1] == other.ranges[0][0]:
 			self.ranges[-1] = (self.ranges[-1][0], other.ranges[0][1])
@@ -331,12 +331,12 @@ def resolve_weak_types (runs):
 
 def resolve_neutral_types (runs):
 
-	def _N0 (this):
+	def _N_ (this):
 		'''Note: Consolidate all neutrals. The rest of the rules
 		   consider all neutrals as a single run, so make it so.'''
 		if this.type in neutrals_and_isolates:
 			this.type = ON
-	runs = Run.compact_list (process_neighbors (runs, 1, _N0))
+	runs = Run.compact_list (process_neighbors (runs, 1, _N_))
 
 	def N1 (prev, this, next):
 		'''A sequence of neutrals takes the direction of the
@@ -490,7 +490,7 @@ def create_isolated_run_lists (types):
 		if t in isolate_initiators:
 			runs.append (run)
 			stack.append (runs)
-			runs = run.data = []
+			runs = run.list = []
 			run.orig_type = run.type
 			continue
 
@@ -508,6 +508,8 @@ def create_isolated_run_lists (types):
 
 def bidi_par_no_isolates (runs, base, min_level):
 
+	run_lists = []
+
 	par_level = get_paragraph_embedding_level (runs, base)
 
 	# Adjust par_level to be at least min_level
@@ -517,17 +519,20 @@ def bidi_par_no_isolates (runs, base, min_level):
 
 	# Recurse on sub-isolates
 	for r in runs:
-		if not r.data:
+		if not r.list:
 			continue
-		s_runs = r.data
+		s_runs = r.list
 		s_base = {FSI:ON,LRI:L,RLI:R}[r.orig_type]
 		s_min_level = r.level + 1
 		(s_runs, s_par_level) = bidi_par_no_isolates (s_runs, s_base, s_min_level)
-		r.data = s_runs
+		r.list = []
+		run_lists.append (s_runs)
+	runs = Run.compact_list (runs)
 
 	runs = resolve_per_level_run_stuff (runs, par_level)
+	run_lists.append (runs)
 
-	return (runs, par_level)
+	return (sum (run_lists, []), par_level)
 
 def bidi_par (types, base):
 
@@ -538,14 +543,10 @@ def bidi_par (types, base):
 
 	# Populate levels
 	levels = [-1] * len (types)
-	def populate_levels (runs, levels):
-		for run in runs:
-			for r in run.ranges:
-				for i in range (*r):
-					levels[i] = run.level
-			if run.data:
-				populate_levels (run.data, levels)
-	populate_levels (runs, levels)
+	for run in runs:
+		for r in run.ranges:
+			for i in range (*r):
+				levels[i] = run.level
 
 	# Break lines here.  For each line do:
 
