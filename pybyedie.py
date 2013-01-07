@@ -85,7 +85,7 @@ FSI	= "FSI"
 PDI	= "PDI"
 
 strongs = [L, R, AL]
-neutrals =  [B, S, WS, ON]
+neutrals_and_isolates = [B, S, WS, ON, FSI, LRI, RLI, PDI]
 embedding_initiators = [LRE, RLE, LRO, RLO]
 isolate_initiators = [LRI, RLI, FSI]
 
@@ -330,7 +330,7 @@ def resolve_neutral_types (runs):
 	def _N0 (this):
 		'''Note: Consolidate all neutrals. The rest of the rules
 		   consider all neutrals as a single run, so make it so.'''
-		if this.type in neutrals:
+		if this.type in neutrals_and_isolates:
 			this.type = ON
 	runs = Run.compact_list (process_neighbors (runs, 1, _N0))
 
