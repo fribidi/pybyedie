@@ -93,10 +93,11 @@ def type_for_level (n):
 	return [L, R][n % 2]
 
 class Run:
-	def __init__ (self, ranges, type, level):
+	def __init__ (self, ranges, type, level = 0, data = None):
 		self.ranges = ranges
 		self.type = type
 		self.level = level
+		self.data = data
 
 	def __len__ (self):
 		return sum (end - start for (start, end) in self.ranges)
@@ -104,15 +105,18 @@ class Run:
 		return cmp (self.ranges, other.ranges)
 
 	def __repr__ (self):
-		return "Run(%s,%s,%s)" % (self.ranges, self.type, self.level)
+		return "Run(%s,%s,%s%s)" % (self.ranges, self.type, self.level, \
+					    "," + repr (self.data) if self.data else "")
 
 	class Mismatch (Exception): pass
 	class TypeMismatch (Mismatch): pass
 	class LevelMismatch (Mismatch): pass
+	class DataMismatch (Mismatch): pass
 
 	def append (self, other):
 		if self.type  != other.type:  raise Run.TypeMismatch ()
 		if self.level != other.level: raise Run.LevelMismatch ()
+		if self.data  != other.data:  raise Run.DataMismatch ()
 		assert self.ranges[-1][1] <= other.ranges[0][0]
 		if self.ranges[-1][1] == other.ranges[0][0]:
 			self.ranges[-1] = (self.ranges[-1][0], other.ranges[0][1])
@@ -439,7 +443,7 @@ def do_per_line_stuff (levels, par_level, orig_types):
 			continue
 		if orig_types[i] in [S, B]:
 			reset = True
-		elif orig_types[i] != WS:
+		elif orig_types[i] not in [WS, FSI, LRI, RLI, PDI]:
 			reset = False
 		if reset:
 			levels[i] = par_level
@@ -474,22 +478,74 @@ def reorder_line (levels):
 	# Remove levels and return.
 	return [r[0] for r in reorder]
 
-def bidi_par (types, base):
+def create_isolated_run_lists (types):
 
-	# Create runs.
-	runs = Run.compact_list (Run ([(i, i+1)], t, 0) for i, t in enumerate (types))
+	base_runs = runs = []
+	stack = []
+
+	for i, t in enumerate (types):
+
+		run = Run ([(i, i+1)], t, 0)
+
+		if t in isolate_initiators:
+			runs.append (run)
+			stack.append (runs)
+			runs = run.data = []
+			run.orig_type = run.type
+			continue
+
+		if t == PDI and stack:
+			runs = stack.pop ()
+
+		try:
+			runs[-1].append (run)
+		except Run.Mismatch:
+			runs.append (run)
+		except IndexError:
+			runs.append (run)
+
+	return base_runs
+
+def bidi_par_no_isolates (runs, base, min_level):
 
 	par_level = get_paragraph_embedding_level (runs, base)
 
+	# Adjust par_level to be at least min_level
+	par_level = min_level + (1 if par_level % 2 != min_level % 2 else 0)
+
 	runs = do_explicit_levels_and_directions (runs, par_level)
+
+	# Recurse on sub-isolates
+	for r in runs:
+		if not r.data:
+			continue
+		s_runs = r.data
+		s_base = {FSI:ON,LRI:L,RLI:R}[r.orig_type]
+		s_min_level = r.level + 1
+		(s_runs, s_par_level) = bidi_par_no_isolates (s_runs, s_base, s_min_level)
+		r.data = s_runs
+
 	runs = resolve_per_level_run_stuff (runs, par_level)
 
-	# Populate levels.
+	return (runs, par_level)
+
+def bidi_par (types, base):
+
+	# Create runs.
+	runs = create_isolated_run_lists (types)
+
+	runs, par_level = bidi_par_no_isolates (runs, base, 0)
+
+	# Populate levels
 	levels = [-1] * len (types)
-	for run in runs:
-		for r in run.ranges:
-			for i in range (*r):
-				levels[i] = run.level
+	def populate_levels (runs, levels):
+		for run in runs:
+			for r in run.ranges:
+				for i in range (*r):
+					levels[i] = run.level
+			if run.data:
+				populate_levels (run.data, levels)
+	populate_levels (runs, levels)
 
 	# Break lines here.  For each line do:
 
