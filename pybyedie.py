@@ -185,6 +185,7 @@ def do_explicit_levels_and_directions (runs, par_level):
 			return 0 <= n <= 61
 
 	stack = []
+	invalid_count = 0
 
 	# X1. Begin by setting the current embedding level to the paragraph
 	# embedding level. Set the directional override status to neutral.
@@ -207,22 +208,21 @@ def do_explicit_levels_and_directions (runs, par_level):
 		#     b. If the new level would not be valid, then this code is
 		#        invalid. Do not change the current level or override
 		#        status.
-		#
-		# Note: We always push onto the stack even for invalid levels.
-		# This makes finding the "matching" state for PDFs trivial.
 		if r.type in [RLE, LRE, RLO, LRO]:
 			for i in range (len (r)):
-				stack.append (state)
 				if r.type in [RLE, RLO]:
 					n = state.least_greatest_odd ()
 				else:
 					n = state.least_greatest_even ()
-				if State.level_would_be_valid (n):
+				if invalid_count == 0 and State.level_would_be_valid (n):
+					stack.append (state)
 					if r.type in [RLE, LRE]:
 						t = ON
 					else:
 						t = R if r.type == RLO else L
 					state = State (n, t)
+				else:
+					invalid_count += 1
 
 		# X8. All explicit directional embeddings and overrides
 		# are completely terminated at the end of each paragraph.
@@ -251,12 +251,11 @@ def do_explicit_levels_and_directions (runs, par_level):
 		# override code. If there was a valid matching code, restore
 		# (pop) the last remembered (pushed) embedding level and
 		# directional override.
-		#
-		# Note: We don't care about validity, since we pushed a
-		# state even for invalid marks.
 		if r.type == PDF:
 			for i in range (len (r)):
-				if stack:
+				if invalid_count:
+					invalid_count -= 1
+				elif stack:
 					state = stack.pop ()
 
 		# X9. Remove all RLE, LRE, RLO, LRO, PDF, and BN codes.
