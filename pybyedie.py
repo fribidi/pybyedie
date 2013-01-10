@@ -165,17 +165,23 @@ class Run:
 def get_paragraph_embedding_level (runs, base):
 
 	if base == ON:
-		try:
-			# P2. In each paragraph, find the first character of
-			# type L, AL, or R.
-			first = next (r for r in runs if r.type in strongs)
-			# P3. If a character is found in P2 and it is of type
-			# AL or R, then set the paragraph embedding level to
-			# one; otherwise, set it to zero.
-			return 1 if first.type in [AL, R] else 0
-		except StopIteration:
-			# P3.
-			return 0
+		# P2. In each paragraph, find the first character of
+		# type L, AL, or R.
+		isolate_depth = 0
+		for r in runs:
+			if r.type in isolate_initiators:
+				isolate_depth += len (r)
+			if r.type == PDI:
+				isolate_depth -= len (r)
+				if isolate_depth < 0:
+					isolate_depth = 0
+			if isolate_depth == 0 and r.type in strongs:
+				# P3. If a character is found in P2 and it is of type
+				# AL or R, then set the paragraph embedding level to
+				# one; otherwise, set it to zero.
+				return 1 if r.type in [AL, R] else 0
+		# P3
+		return 0
 	elif base == L:
 		# HL1. Override P3, and set the paragraph embedding level explicitly.
 		return 0
