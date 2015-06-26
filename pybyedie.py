@@ -205,7 +205,7 @@ def do_explicit_levels_and_directions (runs, par_level):
 
 		@staticmethod
 		def level_would_be_valid (n):
-			return 0 <= n <= 61
+			return 0 <= n <= 123
 
 	stack = []
 	invalid_count = 0
